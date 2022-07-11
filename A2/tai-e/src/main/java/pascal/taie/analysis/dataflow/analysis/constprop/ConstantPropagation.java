@@ -34,7 +34,9 @@ import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.PrimitiveType;
 import pascal.taie.language.type.Type;
 import pascal.taie.util.AnalysisException;
+import soot.tagkit.ArtificialEntityTag;
 
+import javax.swing.event.InternalFrameListener;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -71,8 +73,7 @@ public class ConstantPropagation extends
         // TODO - finish me
         // 一开始的变量类型全部是undefined，
         // 这样在meet的时候才ok
-        CPFact res = new CPFact();
-        return res;
+        return new CPFact();
     }
 
     @Override
@@ -125,10 +126,18 @@ public class ConstantPropagation extends
         // 对于赋值类型的语句，只处理左边为Var的类型，
         // 对于字段存储等类型，不进行处理。
         if (!(def_ instanceof  Var)) return false;
-        CPFact new_out = new CPFact();
-
-
-        return false;
+        CPFact new_out = in.copy();
+        // 将对def_的定义进行删除
+        new_out.remove((Var)def_);
+        RValue r_expr = ((DefinitionStmt<?, ?>)stmt).getRValue();
+        new_out.update((Var)def_, evaluate(r_expr, in));
+        // 判断新的out和之前的out是否相同
+        if (new_out.equals(out)) {
+            return false;
+        } else {
+            out.copyFrom(new_out);
+            return true;
+        }
     }
 
     /**
@@ -158,6 +167,130 @@ public class ConstantPropagation extends
      */
     public static Value evaluate(Exp exp, CPFact in) {
         // TODO - finish me
-        return null;
+        Value res = null;
+        boolean flag = true;
+        if (exp instanceof IntLiteral) {
+            // 如果右侧是一个常量表达式的话
+            res = Value.makeConstant(((IntLiteral)exp).getValue());
+        } else if (exp instanceof Var) {
+            // 如果右侧是一个变量的话
+            res = in.get((Var)exp);
+        } else if (exp instanceof ArithmeticExp) {
+            // 算术表达式
+            Var var1 = ((ArithmeticExp) exp).getOperand1();
+            Var var2 = ((ArithmeticExp) exp).getOperand2();
+            if (in.get(var1).isConstant() && in.get(var2).isConstant()) {
+                // 两个都是常量的情况
+                int val = 0;
+                int val1 =  in.get(var1).getConstant();
+                int val2 = in.get(var2).getConstant();
+                ArithmeticExp.Op op = ((ArithmeticExp) exp).getOperator();
+                if (op == ArithmeticExp.Op.ADD) {
+                    val = val1 + val2;
+                } else if (op == ArithmeticExp.Op.SUB) {
+                    val = val1 - val2;
+                } else if (op == ArithmeticExp.Op.MUL) {
+                    val = val1 * val2;
+                } else if (op == ArithmeticExp.Op.DIV) {
+                    if (val2 == 0) {
+                        res = Value.getUndef();
+                        flag = false;
+                    } else {
+                        val = val1 / val2;
+                    }
+                } else {
+                    if (val2 == 0) {
+                        res = Value.getUndef();
+                        flag = false;
+                    } else {
+                        val = val1 % val2;
+                    }
+                }
+                if (flag) {
+                    res = Value.makeConstant(val);
+                }
+            } else if (in.get(var1).isNAC() || in.get(var2).isNAC()) {
+                // 有一个不是常量
+               res = Value.getNAC();
+            } else {
+                // 其他情况
+               res = Value.getUndef();
+            }
+        } else if (exp instanceof  ConditionExp) {
+            // 条件表达式
+            Var var1 = ((ConditionExp) exp).getOperand1();
+            Var var2 = ((ConditionExp) exp).getOperand2();
+            ConditionExp.Op op = ((ConditionExp) exp).getOperator();
+            if (in.get(var1).isConstant() && in.get(var2).isConstant()) {
+                int val = 0;
+                int val1 = in.get(var1).getConstant();
+                int val2 = in.get(var2).getConstant();
+                if (op == ConditionExp.Op.EQ) {
+                   if (val1 == val2) val = 1;
+                } else if (op == ConditionExp.Op.NE) {
+                    if (val1 != val2) val = 1;
+                } else if (op == ConditionExp.Op.LT){
+                    if (val1 < val2) val = 1;
+                } else if (op == ConditionExp.Op.GT){
+                    if (val1 > val2) val = 1;
+                } else if (op == ConditionExp.Op.LE) {
+                    if (val1 <= val2) val = 1;
+                } else {
+                    if (val1 >= val2) val = 1;
+                }
+                res = Value.makeConstant(val);
+            } else if (in.get(var1).isNAC() || in.get(var2).isNAC()) {
+                res = Value.getNAC();
+            } else {
+                res = Value.getUndef();
+            }
+        } else if (exp instanceof  ShiftExp) {
+            // 移位表达式
+            Var var1 = ((ShiftExp) exp).getOperand1();
+            Var var2 = ((ShiftExp) exp).getOperand2();
+            ShiftExp.Op op = ((ShiftExp) exp).getOperator();
+            if (in.get(var1).isConstant() && in.get(var2).isConstant()) {
+                int val = 0;
+                int val1 = in.get(var1).getConstant();
+                int val2 = in.get(var2).getConstant();
+                if (op == ShiftExp.Op.SHL) {
+                    val = val1 << val2;
+                } else if (op == ShiftExp.Op.SHR) {
+                    val = val1 >> val2;
+                } else {
+                    val = val1 >>> val2;
+                }
+                res = Value.makeConstant(val);
+            } else if (in.get(var1).isNAC() || in.get(var2).isNAC()) {
+                res = Value.getNAC();
+            } else {
+                res = Value.getUndef();
+            }
+        } else if (exp instanceof BitwiseExp) {
+            // 位运算
+            Var var1 = ((BitwiseExp) exp).getOperand1();
+            Var var2 = ((BitwiseExp) exp).getOperand2();
+            BinaryExp.Op op = ((BitwiseExp) exp).getOperator();
+            if (in.get(var1).isConstant() && in.get(var2).isConstant()) {
+                int val = 0;
+                int val1 = in.get(var1).getConstant(), val2 = in.get(var2).getConstant();
+                if (op == BitwiseExp.Op.OR) {
+                    val = val1 | val2;
+                } else if (op == BitwiseExp.Op.AND) {
+                    val =  val1 & val2;
+                } else {
+                    val = val1 ^ val2;
+                }
+                res = Value.makeConstant(val);
+            }  else if (in.get(var1).isNAC() || in.get(var2).isNAC()) {
+                res = Value.getNAC();
+            } else {
+                res = Value.getUndef();
+            }
+        } else {
+            // 其他表达式
+            res = Value.getNAC();
+        }
+        return res;
     }
 }
