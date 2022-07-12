@@ -63,7 +63,9 @@ public class ConstantPropagation extends
         IR ir = cfg.getIR();
         List<Var> paras = ir.getParams();
         for (Var para : paras) {
-            res.update(para, Value.getNAC());
+            if (canHoldInt(para)) {
+                res.update(para, Value.getNAC());
+            }
         }
         return res;
     }
