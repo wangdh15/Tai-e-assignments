@@ -107,9 +107,19 @@ public class ConstantPropagation extends
         } else if (v1.isUndef() && v2.isConstant()) {
             return v2;
         } else if (v1.isConstant() && v2.isUndef()) {
-            return v2;
+            return v1;
         } else {
             return Value.getUndef();
+        }
+    }
+
+
+    private boolean compare(CPFact new_out, CPFact out) {
+        if (new_out.equals(out)) {
+            return false;
+        } else {
+            out.copyFrom(new_out);
+            return true;
         }
     }
 
@@ -118,26 +128,26 @@ public class ConstantPropagation extends
         // TODO - finish me
         // 不考虑不是赋值语句的表达式
         if (!(stmt instanceof DefinitionStmt<?,?>)) {
-            return false;
+           return compare(in, out);
         }
         Optional<LValue> def = stmt.getDef();
-        assert def.isPresent();
+        // 当时invoke函数的时候，def为空
+        if (def.isEmpty()) {
+            return compare(in, out);
+        }
         LValue def_ = def.get();
         // 对于赋值类型的语句，只处理左边为Var的类型，
         // 对于字段存储等类型，不进行处理。
-        if (!(def_ instanceof  Var)) return false;
+        if (!(def_ instanceof  Var)) {
+            return compare(in, out);
+        }
         CPFact new_out = in.copy();
         // 将对def_的定义进行删除
         new_out.remove((Var)def_);
         RValue r_expr = ((DefinitionStmt<?, ?>)stmt).getRValue();
         new_out.update((Var)def_, evaluate(r_expr, in));
         // 判断新的out和之前的out是否相同
-        if (new_out.equals(out)) {
-            return false;
-        } else {
-            out.copyFrom(new_out);
-            return true;
-        }
+        return compare(new_out, out);
     }
 
     /**
