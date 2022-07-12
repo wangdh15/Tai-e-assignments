@@ -48,14 +48,7 @@ class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
             qe.add(node);
             vis.add(node);
         }
-//        Set<Edge<Node>> entry_next_edge = cfg.getOutEdgesOf(entry);
-//        // 将entry的后继入队列
-//        for (Edge<Node> edge : entry_next_edge) {
-//            if (!vis.contains(edge.getTarget())) {
-//                qe.add(edge.getTarget());
-//                vis.add(edge.getTarget());
-//            }
-//        }
+
         while (!qe.isEmpty()) {
             Node node = qe.remove();
             vis.remove(node);

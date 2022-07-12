@@ -141,6 +141,10 @@ public class ConstantPropagation extends
         if (!(def_ instanceof  Var)) {
             return compare(in, out);
         }
+        // 只处理int类型的变量
+        if (!canHoldInt((Var)def_)){
+            return compare(in, out);
+        }
         CPFact new_out = in.copy();
         // 将对def_的定义进行删除
         new_out.remove((Var)def_);
@@ -189,12 +193,14 @@ public class ConstantPropagation extends
             // 算术表达式
             Var var1 = ((ArithmeticExp) exp).getOperand1();
             Var var2 = ((ArithmeticExp) exp).getOperand2();
-            if (in.get(var1).isConstant() && in.get(var2).isConstant()) {
+            ArithmeticExp.Op op = ((ArithmeticExp) exp).getOperator();
+            if (in.get(var2).isConstant() && in.get(var2).getConstant() == 0 && (op == ArithmeticExp.Op.DIV || op == ArithmeticExp.Op.REM)) {
+                res = Value.getUndef();
+            } else if (in.get(var1).isConstant() && in.get(var2).isConstant()) {
                 // 两个都是常量的情况
                 int val = 0;
                 int val1 =  in.get(var1).getConstant();
                 int val2 = in.get(var2).getConstant();
-                ArithmeticExp.Op op = ((ArithmeticExp) exp).getOperator();
                 if (op == ArithmeticExp.Op.ADD) {
                     val = val1 + val2;
                 } else if (op == ArithmeticExp.Op.SUB) {
