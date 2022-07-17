@@ -33,21 +33,13 @@ import pascal.taie.analysis.graph.cfg.CFGBuilder;
 import pascal.taie.analysis.graph.cfg.Edge;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
-import pascal.taie.ir.exp.ArithmeticExp;
-import pascal.taie.ir.exp.ArrayAccess;
-import pascal.taie.ir.exp.CastExp;
-import pascal.taie.ir.exp.FieldAccess;
-import pascal.taie.ir.exp.NewExp;
-import pascal.taie.ir.exp.RValue;
-import pascal.taie.ir.exp.Var;
+import pascal.taie.ir.exp.*;
 import pascal.taie.ir.stmt.AssignStmt;
 import pascal.taie.ir.stmt.If;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.ir.stmt.SwitchStmt;
 
-import java.util.Comparator;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 public class DeadCodeDetection extends MethodAnalysis {
 
@@ -69,8 +61,114 @@ public class DeadCodeDetection extends MethodAnalysis {
                 ir.getResult(LiveVariableAnalysis.ID);
         // keep statements (dead code) sorted in the resulting set
         Set<Stmt> deadCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
-        // TODO - finish me
         // Your task is to recognize dead code in ir and add it to deadCode
+
+        // unreachable branch
+        Set<Stmt> reachable_stmts = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
+        Set<Stmt> vis = new HashSet<>();
+        Queue<Stmt> queue = new LinkedList<>();
+        queue.add(cfg.getEntry());
+        vis.add(cfg.getEntry());
+        while (!queue.isEmpty()) {
+            Stmt cur_stmt = queue.remove();
+            reachable_stmts.add(cur_stmt);
+            Set<Edge<Stmt>> out_edges = cfg.getOutEdgesOf(cur_stmt);
+            if (cur_stmt instanceof If) {
+                Value eval_result = ConstantPropagation.evaluate(((If) cur_stmt).getCondition(), constants.getOutFact(cur_stmt));
+                boolean add_true_branch = false, add_false_branch = false;
+                if (eval_result.isConstant()) {
+                    if (eval_result.getConstant() == 0) {
+                        add_false_branch = true;
+                    } else {
+                        add_true_branch = true;
+                    }
+                } else {
+                    add_true_branch = true;
+                    add_false_branch = true;
+                }
+                for (Edge<Stmt> edge : out_edges) {
+                    if (add_true_branch && edge.getKind() == Edge.Kind.IF_TRUE)  {
+                        if (!vis.contains(edge.getTarget())) {
+                            vis.add(edge.getTarget());
+                            queue.add(edge.getTarget());
+                        }
+                    }
+                    if (add_false_branch && edge.getKind() == Edge.Kind.IF_FALSE)  {
+                        if (!vis.contains(edge.getTarget())) {
+                            vis.add(edge.getTarget());
+                            queue.add(edge.getTarget());
+                        }
+                    }
+                }
+            } else if (cur_stmt instanceof SwitchStmt) {
+                Value eval_result = ConstantPropagation.evaluate(((SwitchStmt) cur_stmt).getVar(), constants.getOutFact(cur_stmt));
+                if (eval_result.isConstant()) {
+                    int eval_value = eval_result.getConstant();
+                    boolean find_branch = false;
+                    Stmt default_branch = null;
+                    for (Edge<Stmt> edge : out_edges) {
+                        if (edge.getKind() == Edge.Kind.SWITCH_CASE && edge.getCaseValue() == eval_value) {
+                            find_branch = true;
+                            if (!vis.contains(edge.getTarget())) {
+                                vis.add(edge.getTarget());
+                                queue.add(edge.getTarget());
+                            }
+                            break;
+                        } else if (edge.getKind() == Edge.Kind.SWITCH_DEFAULT) {
+                            default_branch = edge.getTarget();
+                        }
+                    }
+                    if (!find_branch) {
+                        if (!vis.contains(default_branch)) {
+                            vis.add(default_branch);
+                            queue.add(default_branch);
+                        }
+                    }
+                } else {
+                    // 不是常量则全部加入
+                    for (Edge<Stmt> edge : out_edges) {
+                        if (!vis.contains(edge.getTarget())) {
+                            vis.add(edge.getTarget());
+                            queue.add(edge.getTarget());
+                        }
+                    }
+                }
+            } else {
+
+                for (Edge<Stmt> edge : out_edges) {
+                    if (!vis.contains(edge.getTarget())) {
+                        vis.add(edge.getTarget());
+                        queue.add(edge.getTarget());
+                    }
+                }
+            }
+        }
+        for (Stmt stmt : ir.getStmts()) {
+            if (!reachable_stmts.contains(stmt)) {
+                deadCode.add(stmt);
+            }
+        }
+
+//        System.out.printf("11: %d\n", deadCode.size());
+
+        // unused assignment
+        for (Stmt stmt : ir.getStmts()) {
+            if (deadCode.contains(stmt)) continue;
+
+            if (!(stmt instanceof AssignStmt<?,?>)) continue;
+
+            LValue lValue = ((AssignStmt<?, ?>) stmt).getLValue();
+            if (!(lValue instanceof  Var)) continue;
+
+            RValue rValue = ((AssignStmt<?, ?>) stmt).getRValue();
+            if (!hasNoSideEffect(rValue)) continue;
+
+            if (!liveVars.getOutFact(stmt).contains((Var) lValue)) {
+                deadCode.add(stmt);
+            }
+        }
+
+//        System.out.printf("22: %d\n", deadCode.size());
         return deadCode;
     }
 

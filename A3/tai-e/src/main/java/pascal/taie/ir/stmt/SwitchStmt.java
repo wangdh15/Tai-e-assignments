@@ -88,7 +88,7 @@ public abstract class SwitchStmt extends JumpStmt {
      * } <p>
      * <p>
      * <p>
-     * This API would return [1, 3].
+     * This API would return [1, 3]
      */
     public abstract List<Integer> getCaseValues();
 
